@@ -6,7 +6,7 @@
 </p>
 
 ## Overview
-PhiSiFi is an advanced WiFi security testing tool that combines deauthentication attacks and Evil-Twin access point techniques. This fork enhances the original [p3tr0s/PhiSiFi](https://github.com/p3tr0s/PhiSiFi) with improved UI, better device compatibility, and more effective attack methods.
+PhiSiFi is an advanced WiFi hacking tool that combines deauthentication attacks and Evil-Twin access point techniques. This fork enhances the original [p3tr0s/PhiSiFi](https://github.com/p3tr0s/PhiSiFi) with improved UI, better device compatibility, and more effective attack methods.
 
 <img src="https://user-images.githubusercontent.com/32341044/202444452-3e7c9ab0-1643-4996-8319-18b8c25544fa.jpg"></img><br>
 
