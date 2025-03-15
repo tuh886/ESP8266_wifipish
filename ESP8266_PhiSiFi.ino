@@ -264,7 +264,7 @@ void setup()
   WiFi.mode(WIFI_AP_STA);
   wifi_promiscuous_enable(1);
   WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP("WiFi_Setup", "@bobby2005@");
+  WiFi.softAP("WiFi_Setup", "@wifi2005309@");
   dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
 
   webServer.on("/", handleIndex);
@@ -350,7 +350,7 @@ void handleResult()
     int n = WiFi.softAPdisconnect(true);
     Serial.println(String(n));
     WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-    WiFi.softAP("WiFi_Setup", "@bobby2005@");
+    WiFi.softAP("WiFi_Setup", "@wifi2005309@");
     dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
     Serial.println("Good password was entered !");
     Serial.println(_correct);
@@ -509,7 +509,7 @@ void handleIndex()
       int n = WiFi.softAPdisconnect(true);
       Serial.println(String(n));
       WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-      WiFi.softAP("WiFi_Setup", "@bobby2005@");
+      WiFi.softAP("WiFi_Setup", "@wifi2005309@");
       dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
     }
     return;
@@ -797,7 +797,7 @@ void handleAdmin()
       int n = WiFi.softAPdisconnect(true);
       Serial.println(String(n));
       WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-      WiFi.softAP("WiFi_Setup", "@bobby2005@");
+      WiFi.softAP("WiFi_Setup", "@wifi2005309@");
       dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
     }
     return;
