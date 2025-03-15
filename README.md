@@ -96,7 +96,7 @@ Please check the legal regulations in your country before using it. Unauthorized
 ### Initial Connection
 1. Power on your ESP8266 device
 2. Connect to the AP named `WiFi_Setup` with password `@wifi2005309@` from your phone/PC
-3. Open a web browser and navigate to `192.168.4.1` (or any website - you'll be redirected to the captive portal)
+3. Open a web browser and navigate to `192.168.4.1`
 
 ### Running Attacks
 1. Select the target AP you want to attack from the list (refreshes every 30 seconds)
